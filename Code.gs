@@ -18,7 +18,9 @@
  * ═══════════════════════════════════════════════════════════
  */
 
-var DATA_SHEET = '_data'; // ชีตซ่อนเก็บข้อมูลดิบ (อย่าแก้เอง)
+var DATA_SHEET = '_data';     // ชีตซ่อนเก็บข้อมูลดิบ (อย่าแก้เอง)
+var BACKUP_SHEET = '_backup'; // สำรองข้อมูลรายวัน เก็บย้อนหลัง 30 วัน
+var BACKUP_KEEP = 30;
 
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'load';
@@ -60,12 +62,29 @@ function saveData(data) {
   lock.waitLock(10000); // กันเขียนชนกันเมื่อหลายเครื่องบันทึกพร้อมกัน
   try {
     var sh = ss.getSheetByName(DATA_SHEET) || ss.insertSheet(DATA_SHEET);
+    dailyBackup(ss, sh); // สำรองข้อมูลเดิมของวันนี้ไว้ก่อนเขียนทับ
     sh.getRange(1, 1).setValue(JSON.stringify(data));
     try { sh.hideSheet(); } catch (e) {}
     mirrorReadable(ss, data);
   } finally {
     lock.releaseLock();
   }
+}
+
+/** สำรองข้อมูลวันละ 1 snapshot (ค่าแรกของวัน) — ย้อนหลัง 30 วัน
+ *  กู้คืน: เปิดชีต _backup (คลิกขวาชื่อชีต → Unhide ถ้าซ่อนอยู่),
+ *  คัดลอก JSON ของวันที่ต้องการไปวางทับช่อง A1 ของชีต _data */
+function dailyBackup(ss, dataSh) {
+  var raw = dataSh.getRange(1, 1).getValue();
+  if (!raw) return;
+  var today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  var bk = ss.getSheetByName(BACKUP_SHEET) || ss.insertSheet(BACKUP_SHEET);
+  try { bk.hideSheet(); } catch (e) {}
+  var last = bk.getLastRow();
+  if (last > 0 && bk.getRange(last, 1).getValue() === today) return; // วันนี้สำรองแล้ว
+  bk.appendRow([today, raw]);
+  var rows = bk.getLastRow();
+  if (rows > BACKUP_KEEP) bk.deleteRows(1, rows - BACKUP_KEEP);
 }
 
 /** สร้างชีตอ่านง่ายสำหรับคน: Lot ยา / กล่อง / ประวัติ (เขียนทับทุกครั้งที่บันทึก) */
